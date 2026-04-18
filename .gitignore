@@ -1,5 +1,7 @@
 venv/
 
+.vscode/
+
 samples/*.dcm
 
 __pycache__/

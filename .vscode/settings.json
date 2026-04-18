@@ -1,6 +1,0 @@
-{
-    "python-envs.defaultEnvManager": "ms-python.python:venv",
-    "python.defaultInterpreterPath": "/Users/andres/proyectos/dicom-viewer/venv/bin/python",
-    "python.analysis.extraPaths": ["/Users/andres/proyectos/dicom-viewer/venv/lib/python3.12/site-packages"]
-
-}
