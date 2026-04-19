@@ -2,7 +2,8 @@ venv/
 
 .vscode/
 
-samples/*.dcm
+samples/*
+!samples/.gitkeep
 
 __pycache__/
 *.py[cod]

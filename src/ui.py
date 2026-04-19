@@ -1,5 +1,4 @@
-# src/ui.py
-
+import pydicom
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
@@ -32,6 +31,10 @@ class DicomViewer(tk.Tk):
         self._ds = None          # dataset pydicom
         self._pixel_array = None # numpy array
         self._meta = {}          # dict de metadatos
+        self._wc_original = 40.0
+        self._ww_original = 400.0
+        self._serie = []     # lista de rutas .dcm ordenadas
+        self._indice = 0     # corte actual
 
         self._build_ui()
 
@@ -58,16 +61,55 @@ class DicomViewer(tk.Tk):
         p = self._panel
 
         # Botón abrir
-        btn = tk.Button(
+        tk.Button(
             p, text="Abrir .dcm",
             command=self._abrir_archivo,
             bg="#2a9d8f", fg="white",
             relief="flat", cursor="hand2",
             font=("Helvetica", 11, "bold"),
             pady=6,
-        )
-        btn.pack(fill="x", pady=(0, 12))
+        ).pack(fill="x", pady=(0, 12))
 
+        tk.Button(
+            p, text="Abrir serie",
+            command=self._abrir_serie,
+            bg="#2a9d8f", fg="white",
+            relief="flat", cursor="hand2",
+            font=("Helvetica", 11, "bold"),
+            pady=6,
+        ).pack(fill="x", pady=(0, 12))
+
+        tk.Button(
+            p, text="Reset W/L",
+            command=self._reset_window,
+            bg="#2c2c2c", fg="#dddddd",
+            relief="flat", cursor="hand2",
+            font=("Helvetica", 11, "bold"),
+            pady=6,
+        ).pack(fill="x", pady=(0, 12))
+        
+        # Navegación de serie
+        nav_frame = tk.Frame(p, bg="#1a1a1a")
+        nav_frame.pack(fill="x", pady=(0, 12))
+
+        tk.Button(
+            nav_frame, text="◀",
+            command=self._corte_anterior,
+            bg="#2c2c2c", fg="#dddddd",
+            relief="flat", cursor="hand2",
+            font=("Helvetica", 11, "bold"),
+            pady=6,
+        ).pack(side="left", expand=True, fill="x")
+
+        tk.Button(
+            nav_frame, text="▶",
+            command=self._corte_siguiente,
+            bg="#2c2c2c", fg="#dddddd",
+            relief="flat", cursor="hand2",
+            font=("Helvetica", 11, "bold"),
+            pady=6,
+        ).pack(side="right", expand=True, fill="x")
+                
         # Metadatos
         meta_frame = tk.LabelFrame(
             p, text="Metadatos",
@@ -161,6 +203,8 @@ class DicomViewer(tk.Tk):
         self._mpl_canvas.get_tk_widget().grid(row=0, column=0, sticky="nsew")
         self._mpl_canvas.draw()
 
+        self._bind_scroll()
+
     # ---------------------------------------------------------------- Lógica
 
     def _abrir_archivo(self):
@@ -186,8 +230,72 @@ class DicomViewer(tk.Tk):
         ww = self._meta.get("WindowWidth", 400)
         self._wc_var.set(float(wc))
         self._ww_var.set(float(ww))
+        self._wc_original = self._wc_var.get()
+        self._ww_original = self._ww_var.get()
 
         self._render()
+
+    def _abrir_serie(self):
+        carpeta = filedialog.askdirectory(title="Seleccionar carpeta DICOM")
+        if not carpeta:
+            return
+
+        from pathlib import Path
+        archivos = [f for f in Path(carpeta).iterdir() if f.is_file()]
+        if not archivos:
+            messagebox.showerror("Error", "No se encontraron archivos .dcm en la carpeta.")
+            return
+
+        # Ordenar por InstanceNumber si está disponible
+        def orden(ruta):
+            try:
+                ds = pydicom.dcmread(str(ruta), stop_before_pixels=True)
+                if hasattr(ds, "ImagePositionPatient"):
+                    return float(ds.ImagePositionPatient[2])
+                return 0.0
+            except Exception:
+                return 0.0
+                
+        self._serie = sorted(archivos, key=orden)
+        self._indice = 0
+        self._cargar_corte(self._indice)
+
+    def _cargar_corte(self, indice: int):
+        ruta = self._serie[indice]
+        try:
+            self._ds = cargar_dicom(str(ruta))
+            self._meta = extraer_metadatos(self._ds)
+            self._pixel_array = extraer_pixel_array(self._ds)
+        except Exception as e:
+            messagebox.showerror("Error al cargar corte", str(e))
+            return
+
+        self._actualizar_metadatos()
+
+        wc = self._meta.get("Window Center", "40")
+        ww = self._meta.get("Window Width", "400")
+        try:
+            self._wc_var.set(float(wc))
+            self._ww_var.set(float(ww))
+        except ValueError:
+            self._wc_var.set(40.0)
+            self._ww_var.set(400.0)
+
+        self._wc_original = self._wc_var.get()
+        self._ww_original = self._ww_var.get()
+        self._render()
+
+    def _corte_siguiente(self):
+        if not self._serie:
+            return
+        self._indice = min(self._indice + 1, len(self._serie) - 1)
+        self._cargar_corte(self._indice)
+
+    def _corte_anterior(self):
+        if not self._serie:
+            return
+        self._indice = max(self._indice - 1, 0)
+        self._cargar_corte(self._indice)
 
     def _actualizar_metadatos(self):
         m = self._meta
@@ -218,4 +326,48 @@ class DicomViewer(tk.Tk):
         self._ax.imshow(windowed, cmap="gray", vmin=0.0, vmax=1.0)
         self._ax.axis("off")
         self._fig.tight_layout(pad=0)
+        self._ax.text(
+            0.01, 0.99,
+            f"WC: {int(wc)}  WW: {int(ww)}",
+            transform=self._ax.transAxes,
+            color="#00ff41",
+            fontsize=9,
+            fontfamily="monospace",
+            verticalalignment="top",
+            )
         self._mpl_canvas.draw()
+
+    def _bind_scroll(self):
+        widget = self._mpl_canvas.get_tk_widget()
+        widget.bind("<MouseWheel>", self._on_scroll)          # macOS / Windows
+        widget.bind("<Button-4>",   self._on_scroll)          # Linux scroll up
+        widget.bind("<Button-5>",   self._on_scroll)          # Linux scroll down
+
+    def _on_scroll(self, event):
+        if self._pixel_array is None:
+            return
+
+        step_wc = 10
+        step_ww = 50
+
+        if event.num == 4 or event.delta > 0:
+            direccion = 1
+        else:
+            direccion = -1
+
+        if event.state & 0x1:    # Shift → ajusta WW
+            self._ww_var.set(max(1.0, self._ww_var.get() + direccion * step_ww))
+            self._render()
+        elif event.state & 0x8:  # Ctrl → ajusta WC
+            self._wc_var.set(self._wc_var.get() + direccion * step_wc)
+            self._render()
+        else:                     # Sin modificador → navega cortes
+            if not self._serie:
+                return
+            self._indice = max(0, min(self._indice + direccion, len(self._serie) - 1))
+            self._cargar_corte(self._indice)
+            
+    def _reset_window(self):
+        self._wc_var.set(self._wc_original)
+        self._ww_var.set(self._ww_original)
+        self._render()

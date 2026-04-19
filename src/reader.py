@@ -7,7 +7,7 @@ def cargar_dicom(ruta: str) -> pydicom.Dataset:
     ruta = Path(ruta)
     if not ruta.exists():
         raise FileNotFoundError(f"Archivo no encontrado: {ruta}")
-    if ruta.suffix.lower() != ".dcm":
+    if ruta.suffix.lower() not in (".dcm", ""):
         raise ValueError(f"El archivo no es .dcm: {ruta}")
     try:
         return pydicom.dcmread(str(ruta))
