@@ -191,9 +191,9 @@ class DicomViewer(tk.Tk):
 
     def _actualizar_metadatos(self):
         m = self._meta
-        self._lbl_paciente.config( text=str(m.get("PatientName", "—")))
-        self._lbl_modalidad.config(text=str(m.get("Modality",     "—")))
-        self._lbl_fecha.config(    text=str(m.get("StudyDate",    "—")))
+        self._lbl_paciente.config( text=str(m.get("Nombre paciente", "—")))
+        self._lbl_modalidad.config(text=str(m.get("Modalidad",     "—")))
+        self._lbl_fecha.config(    text=str(m.get("Fecha estudio",    "—")))
         h, w = self._pixel_array.shape[:2]
         self._lbl_dim.config(text=f"{w} × {h} px")
 
